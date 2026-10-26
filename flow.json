@@ -1,0 +1,420 @@
+[
+  {
+    "id": "pm_tab",
+    "type": "tab",
+    "label": "Price Monitor",
+    "disabled": false,
+    "info": "Моніторинг цін: щоденна перевірка + Telegram-команди /add /list /remove /check.\nПотрібні змінні середовища: TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID.\nПотрібне файлове сховище контексту \"file\" у settings.js (див. README)."
+  },
+  {
+    "id": "pm_c1",
+    "type": "comment",
+    "z": "pm_tab",
+    "name": "1) Перевірка цін (щодня о 09:00 + вручну)",
+    "info": "Щодня о 09:00 за локальним часом комп'ютера. Кнопка \"Перевірити зараз\" запускає ручну перевірку зі звітом по кожному товару.",
+    "x": 230,
+    "y": 40,
+    "wires": []
+  },
+  {
+    "id": "pm_c2",
+    "type": "comment",
+    "z": "pm_tab",
+    "name": "2) Діалог у Telegram: /add /list /remove /check /help",
+    "info": "Кожні 5 секунд бот опитує Telegram (getUpdates) і обробляє команди власника.",
+    "x": 260,
+    "y": 400,
+    "wires": []
+  },
+  {
+    "id": "pm_c3",
+    "type": "comment",
+    "z": "pm_tab",
+    "name": "0) Ініціалізація списку товарів",
+    "info": "При першому запуску записує стартовий список (Comfy + AUTO.RIA) у файлове сховище.",
+    "x": 190,
+    "y": 560,
+    "wires": []
+  },
+  {
+    "id": "pm_inj_daily",
+    "type": "inject",
+    "z": "pm_tab",
+    "name": "Щодня 09:00",
+    "props": [
+      {
+        "p": "payload"
+      },
+      {
+        "p": "topic",
+        "vt": "str"
+      }
+    ],
+    "repeat": "",
+    "crontab": "00 09 * * *",
+    "once": false,
+    "onceDelay": 0.1,
+    "topic": "",
+    "payload": "",
+    "payloadType": "date",
+    "x": 140,
+    "y": 100,
+    "wires": [
+      [
+        "pm_fn_load"
+      ]
+    ]
+  },
+  {
+    "id": "pm_inj_manual",
+    "type": "inject",
+    "z": "pm_tab",
+    "name": "Перевірити зараз",
+    "props": [
+      {
+        "p": "manual",
+        "v": "true",
+        "vt": "bool"
+      }
+    ],
+    "repeat": "",
+    "crontab": "",
+    "once": false,
+    "onceDelay": 0.1,
+    "topic": "",
+    "x": 150,
+    "y": 160,
+    "wires": [
+      [
+        "pm_fn_load"
+      ]
+    ]
+  },
+  {
+    "id": "pm_fn_load",
+    "type": "function",
+    "z": "pm_tab",
+    "name": "Список товарів",
+    "func": "// Бере список товарів і випускає по одному повідомленню на кожен товар\n// (далі вони йдуть через ноду-обмежувач швидкості і завантажуються по черзі).\nconst STORE = 'file';\nconst items = global.get('items', STORE) || [];\nif (items.length === 0) {\n    node.status({ fill: 'yellow', shape: 'ring', text: 'список порожній' });\n    return null;\n}\n\nconst manual = msg.manual === true;\nconst out = items.map(item => ({\n    item: item,\n    manual: manual,\n    url: item.url,\n    requestTimeout: 30000,\n    headers: {\n        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',\n        'Accept-Language': 'uk-UA,uk;q=0.9,en-US;q=0.8,en;q=0.7'\n    }\n}));\n\nnode.status({ fill: 'blue', shape: 'dot', text: 'перевірка: ' + out.length + ' поз.' });\nreturn [out];\n",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 380,
+    "y": 130,
+    "wires": [
+      [
+        "pm_delay"
+      ]
+    ]
+  },
+  {
+    "id": "pm_delay",
+    "type": "delay",
+    "z": "pm_tab",
+    "name": "1 запит / 2 с",
+    "pauseType": "rate",
+    "timeout": "5",
+    "timeoutUnits": "seconds",
+    "rate": "1",
+    "nbRateUnits": "2",
+    "rateUnits": "second",
+    "randomFirst": "1",
+    "randomLast": "5",
+    "randomUnits": "seconds",
+    "drop": false,
+    "allowrate": false,
+    "outputs": 1,
+    "x": 580,
+    "y": 130,
+    "wires": [
+      [
+        "pm_http_fetch"
+      ]
+    ]
+  },
+  {
+    "id": "pm_http_fetch",
+    "type": "http request",
+    "z": "pm_tab",
+    "name": "Завантажити сторінку",
+    "method": "GET",
+    "ret": "txt",
+    "paytoqs": "ignore",
+    "url": "",
+    "tls": "",
+    "persist": false,
+    "proxy": "",
+    "insecureHTTPParser": false,
+    "authType": "",
+    "senderr": false,
+    "headers": [],
+    "x": 790,
+    "y": 130,
+    "wires": [
+      [
+        "pm_fn_parse"
+      ]
+    ]
+  },
+  {
+    "id": "pm_catch",
+    "type": "catch",
+    "z": "pm_tab",
+    "name": "Помилка мережі",
+    "scope": [
+      "pm_http_fetch"
+    ],
+    "uncaught": false,
+    "x": 790,
+    "y": 200,
+    "wires": [
+      [
+        "pm_fn_parse"
+      ]
+    ]
+  },
+  {
+    "id": "pm_fn_parse",
+    "type": "function",
+    "z": "pm_tab",
+    "name": "Ціна → порівняння → сповіщення",
+    "func": "// Витягує ціну зі сторінки, порівнює з попередньою, оновлює історію і формує сповіщення.\nconst STORE = 'file';\nconst THRESHOLDS = [\n    [25, '🔥 Падіння ціни більше 25%'],\n    [20, '🔥 Падіння ціни 20%+'],\n    [15, '📉 Падіння ціни 15%+'],\n    [10, '📉 Падіння ціни 10%+'],\n    [0,  '🔻 Ціна зменшилась']\n];\nconst CUR = { UAH: '₴', USD: '$', EUR: '€' };\n\nconst esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\nconst fmt = n => String(Math.round(n)).replace(/\\B(?=(\\d{3})+(?!\\d))/g, ' ');\nconst toNum = s => parseFloat(String(s).replace(/[\\s ]/g, '').replace(',', '.'));\n\nconst item = msg.item;\nif (!item) return null;\nconst manual = msg.manual === true;\n\n// 1) Помилка завантаження (403, таймаут, немає мережі тощо)\nif (msg.error || !msg.statusCode || msg.statusCode >= 400) {\n    const reason = msg.error ? (msg.error.message || String(msg.error)) : ('HTTP ' + msg.statusCode);\n    node.warn('[' + item.name + '] помилка завантаження: ' + reason);\n    return manual ? { text: '⚠️ <b>' + esc(item.name) + '</b>: не вдалося завантажити сторінку (' + esc(reason) + ').' } : null;\n}\n\n// 2) Пошук ціни\nconst html = typeof msg.payload === 'string' ? msg.payload : '';\nlet price = null;\nlet cur = item.currency || '';\n\nif (item.type === 'auto_ria_search' || item.type === 'auto_ria_listing') {\n    // На AUTO.RIA беремо поточну (не закреслену) ціну в доларах: \"13 300 $ ·\"\n    const text = html.replace(/<[^>]+>/g, ' ').replace(/&nbsp;|&#160;/g, ' ');\n    const found = [];\n    // Ціна = цифри групами по три (\"17 950\") або суцільне число; не може починатись усередині іншого числа (рік тощо)\n    const re = /(?<!\\d)(\\d{1,3}(?:\\s\\d{3})*|\\d{4,7})\\s?\\$\\s*·/g;\n    let m;\n    while ((m = re.exec(text)) !== null) {\n        const v = toNum(m[1]);\n        if (isFinite(v) && v > 0) found.push(v);\n    }\n    if (found.length) {\n        price = item.type === 'auto_ria_search' ? Math.min.apply(null, found) : found[0];\n        cur = '$';\n    }\n} else {\n    // Магазини (comfy.ua та інші): мета-теги Open Graph / schema.org / JSON-LD\n    const patterns = [\n        /<meta[^>]+(?:property|name)=[\"']product:price:amount[\"'][^>]*content=[\"']([^\"']+)[\"']/i,\n        /<meta[^>]+content=[\"']([^\"']+)[\"'][^>]+(?:property|name)=[\"']product:price:amount[\"']/i,\n        /<meta[^>]+(?:property|name)=[\"']og:price:amount[\"'][^>]*content=[\"']([^\"']+)[\"']/i,\n        /itemprop=[\"']price[\"'][^>]*content=[\"']([^\"']+)[\"']/i,\n        /\"price\"\\s*:\\s*\"?(\\d[\\d.]*)\"?/\n    ];\n    for (const p of patterns) {\n        const m = html.match(p);\n        if (m) {\n            const v = toNum(m[1]);\n            if (isFinite(v) && v > 0) { price = v; break; }\n        }\n    }\n    if (!cur) {\n        const cm = html.match(/<meta[^>]+(?:property|name)=[\"'](?:product|og):price:currency[\"'][^>]*content=[\"']([A-Z]{3})[\"']/i)\n                || html.match(/\"priceCurrency\"\\s*:\\s*\"([A-Z]{3})\"/);\n        if (cm) cur = CUR[cm[1]] || cm[1];\n    }\n}\n\nconst prices = global.get('prices', STORE) || {};\nconst entry = prices[item.id] || { history: [] };\n\nif (price === null) {\n    node.warn('[' + item.name + '] ціну не знайдено — можливо, змінилась верстка');\n    const first = !entry.warned;\n    entry.warned = true;\n    prices[item.id] = entry;\n    global.set('prices', prices, STORE);\n    if (manual || first) {\n        return { text: '⚠️ <b>' + esc(item.name) + '</b>: не вдалось знайти ціну на сторінці.\\n' + esc(item.url) };\n    }\n    return null;\n}\n\n// 3) Порівняння з попередньою ціною\nconst old = entry.last_price;\nlet text = null;\nif (old !== undefined && old !== null && price < old) {\n    const pct = (old - price) / old * 100;\n    const label = THRESHOLDS.find(t => pct >= t[0])[1];\n    text = label + '\\n<b>' + esc(item.name) + '</b>\\n' +\n           'Було: ' + fmt(old) + ' ' + cur + '\\n' +\n           'Стало: ' + fmt(price) + ' ' + cur + '\\n' +\n           'Падіння: ' + pct.toFixed(1) + '%\\n' + esc(item.url);\n} else if (manual) {\n    const status = (old === undefined || old === null) ? 'базову ціну збережено'\n                 : price > old ? 'ціна зросла (було ' + fmt(old) + ')'\n                 : 'без змін';\n    text = 'ℹ️ <b>' + esc(item.name) + '</b>: ' + fmt(price) + ' ' + cur + ' — ' + status;\n}\n\n// 4) Зберігаємо стан (історія — останні 180 записів)\nentry.last_price = price;\nentry.currency = cur;\nentry.name = item.name;\nentry.url = item.url;\nentry.warned = false;\nentry.history = (entry.history || []).concat({ date: new Date().toISOString(), price: price }).slice(-180);\nprices[item.id] = entry;\nglobal.set('prices', prices, STORE);\n\nnode.status({ fill: 'green', shape: 'dot', text: item.name.slice(0, 24) + ': ' + fmt(price) });\nreturn text ? { text: text } : null;\n",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 1030,
+    "y": 130,
+    "wires": [
+      [
+        "pm_fn_send"
+      ]
+    ]
+  },
+  {
+    "id": "pm_fn_send",
+    "type": "function",
+    "z": "pm_tab",
+    "name": "Підготувати Telegram",
+    "func": "// Готує запит sendMessage до Telegram API. Токен береться зі змінної середовища.\nconst token = env.get('TELEGRAM_BOT_TOKEN');\nconst chat = msg.chat_id || env.get('TELEGRAM_CHAT_ID');\nif (!token || !chat) {\n    node.status({ fill: 'red', shape: 'ring', text: 'нема TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID' });\n    node.warn('Змінні середовища TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID не задані — повідомлення не надіслано');\n    return null;\n}\nif (!msg.text) return null;\n\nconst base = env.get('TELEGRAM_API_BASE') || 'https://api.telegram.org';\nreturn {\n    url: base + '/bot' + token + '/sendMessage',\n    headers: { 'content-type': 'application/json' },\n    requestTimeout: 20000,\n    payload: {\n        chat_id: chat,\n        text: String(msg.text).slice(0, 4000),\n        parse_mode: 'HTML',\n        disable_web_page_preview: true\n    }\n};\n",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 1270,
+    "y": 130,
+    "wires": [
+      [
+        "pm_delay_send"
+      ]
+    ]
+  },
+  {
+    "id": "pm_delay_send",
+    "type": "delay",
+    "z": "pm_tab",
+    "name": "1 повідомлення / с",
+    "pauseType": "rate",
+    "timeout": "5",
+    "timeoutUnits": "seconds",
+    "rate": "1",
+    "nbRateUnits": "1",
+    "rateUnits": "second",
+    "randomFirst": "1",
+    "randomLast": "5",
+    "randomUnits": "seconds",
+    "drop": false,
+    "allowrate": false,
+    "outputs": 1,
+    "x": 1480,
+    "y": 130,
+    "wires": [
+      [
+        "pm_http_send"
+      ]
+    ]
+  },
+  {
+    "id": "pm_http_send",
+    "type": "http request",
+    "z": "pm_tab",
+    "name": "Telegram sendMessage",
+    "method": "POST",
+    "ret": "txt",
+    "paytoqs": "ignore",
+    "url": "",
+    "tls": "",
+    "persist": false,
+    "proxy": "",
+    "insecureHTTPParser": false,
+    "authType": "",
+    "senderr": false,
+    "headers": [],
+    "x": 1690,
+    "y": 130,
+    "wires": [
+      [
+        "pm_dbg_send"
+      ]
+    ]
+  },
+  {
+    "id": "pm_dbg_send",
+    "type": "debug",
+    "z": "pm_tab",
+    "name": "Статус відправки",
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": true,
+    "complete": "statusCode",
+    "targetType": "msg",
+    "statusVal": "statusCode",
+    "statusType": "auto",
+    "x": 1900,
+    "y": 130,
+    "wires": []
+  },
+  {
+    "id": "pm_inj_poll",
+    "type": "inject",
+    "z": "pm_tab",
+    "name": "Кожні 5 с",
+    "props": [
+      {
+        "p": "payload"
+      }
+    ],
+    "repeat": "5",
+    "crontab": "",
+    "once": true,
+    "onceDelay": 3,
+    "topic": "",
+    "payload": "",
+    "payloadType": "date",
+    "x": 130,
+    "y": 460,
+    "wires": [
+      [
+        "pm_fn_getupd"
+      ]
+    ]
+  },
+  {
+    "id": "pm_fn_getupd",
+    "type": "function",
+    "z": "pm_tab",
+    "name": "getUpdates (запит)",
+    "func": "// Формує запит getUpdates (опитування Telegram на нові команди). Запускається кожні 5 секунд.\nconst token = env.get('TELEGRAM_BOT_TOKEN');\nif (!token) {\n    node.status({ fill: 'red', shape: 'ring', text: 'нема TELEGRAM_BOT_TOKEN' });\n    return null;\n}\n\n// Захист від накладання запитів: якщо попередній ще не завершився, пропускаємо цикл\nconst now = Date.now();\nconst lock = flow.get('pollLock');\nif (lock && now - lock < 20000) return null;\nflow.set('pollLock', now);\n\nconst base = env.get('TELEGRAM_API_BASE') || 'https://api.telegram.org';\nconst offset = global.get('tg_offset', 'file') || 0;\nreturn {\n    url: base + '/bot' + token + '/getUpdates?timeout=0&offset=' + offset,\n    requestTimeout: 15000,\n    headers: {}\n};\n",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 340,
+    "y": 460,
+    "wires": [
+      [
+        "pm_http_getupd"
+      ]
+    ]
+  },
+  {
+    "id": "pm_http_getupd",
+    "type": "http request",
+    "z": "pm_tab",
+    "name": "Telegram getUpdates",
+    "method": "GET",
+    "ret": "obj",
+    "paytoqs": "ignore",
+    "url": "",
+    "tls": "",
+    "persist": false,
+    "proxy": "",
+    "insecureHTTPParser": false,
+    "authType": "",
+    "senderr": false,
+    "headers": [],
+    "x": 570,
+    "y": 460,
+    "wires": [
+      [
+        "pm_fn_cmd"
+      ]
+    ]
+  },
+  {
+    "id": "pm_fn_cmd",
+    "type": "function",
+    "z": "pm_tab",
+    "name": "Обробка команд",
+    "func": "// Обробка команд Telegram: /start /help /add /list /remove /check\n// Вихід 1 -> відповіді в Telegram, вихід 2 -> запуск ручної перевірки цін.\nconst STORE = 'file';\nconst esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\nconst fmt = n => String(Math.round(n)).replace(/\\B(?=(\\d{3})+(?!\\d))/g, ' ');\nconst hash = s => { let h = 5381; for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0; return (h >>> 0).toString(36); };\n\nconst HELP = [\n    '🤖 <b>Монітор цін</b>',\n    '',\n    '/add &lt;посилання&gt; [назва] — додати товар',\n    '/list — показати відстежувані товари',\n    '/remove &lt;номер або id&gt; — видалити товар',\n    '/check — перевірити ціни зараз',\n    '/help — ця підказка',\n    '',\n    'Щодня бот перевіряє ціни сам і пише, якщо ціна впала.'\n].join('\\n');\n\nflow.set('pollLock', null);   // запит завершено, можна опитувати знову\n\nconst data = msg.payload;\nif (!data || data.ok !== true) {\n    if (msg.statusCode) node.warn('getUpdates: HTTP ' + msg.statusCode);\n    node.status({ fill: 'red', shape: 'ring', text: 'getUpdates: ' + (msg.statusCode || 'помилка') });\n    return null;\n}\nnode.status({ fill: 'green', shape: 'dot', text: 'ок ' + new Date().toLocaleTimeString() });\n\nconst allowed = String(env.get('TELEGRAM_CHAT_ID') || '').trim();\nlet items = global.get('items', STORE) || [];\nlet prices = global.get('prices', STORE) || {};\nlet offset = global.get('tg_offset', STORE) || 0;\nconst replies = [];\nlet runCheck = false;\nlet changed = false;\n\nfor (const u of (data.result || [])) {\n    offset = Math.max(offset, u.update_id + 1);\n    const m = u.message;\n    if (!m || typeof m.text !== 'string') continue;\n\n    const chatId = String(m.chat.id);\n    const say = text => replies.push({ chat_id: chatId, text: text });\n    const parts = m.text.trim().split(/\\s+/);\n    const cmd = parts[0].split('@')[0].toLowerCase();\n\n    // Якщо TELEGRAM_CHAT_ID ще не задано, відповідаємо лише на /start і показуємо chat_id\n    if (!allowed) {\n        if (cmd === '/start') {\n            say('👋 Твій chat_id: <code>' + esc(chatId) + '</code>\\nЗадай його у змінній середовища TELEGRAM_CHAT_ID і перезапусти Node-RED.');\n        }\n        continue;\n    }\n    // Чужі чати ігноруємо\n    if (chatId !== allowed) {\n        node.warn('Команда з чужого чату ' + chatId + ' проігнорована');\n        continue;\n    }\n\n    switch (cmd) {\n        case '/start':\n        case '/help':\n            say(HELP);\n            break;\n\n        case '/add': {\n            const url = parts[1];\n            if (!url || !/^https?:\\/\\/[^\\s]+$/i.test(url)) {\n                say('Використання: <code>/add &lt;посилання&gt; [назва]</code>');\n                break;\n            }\n            if (items.some(i => i.url === url)) {\n                say('ℹ️ Це посилання вже відстежується.');\n                break;\n            }\n            const host = url.replace(/^https?:\\/\\//i, '').split(/[\\/?#]/)[0].toLowerCase().replace(/^www\\./, '');\n            const path = url.replace(/^https?:\\/\\/[^\\/?#]+/i, '').split(/[?#]/)[0];\n            let type = 'generic';\n            let currency = '';\n            let name = parts.slice(2).join(' ');\n            if (/(^|\\.)comfy\\.ua$/.test(host)) {\n                type = 'comfy_product'; currency = '₴';\n                if (!name) name = 'Comfy: ' + (path.split('/').filter(Boolean).pop() || host).replace(/\\.html?$/i, '').replace(/[-_]+/g, ' ').slice(0, 70);\n            } else if (/(^|\\.)auto\\.ria\\.com$/.test(host)) {\n                type = /\\/search\\b/.test(path) ? 'auto_ria_search' : 'auto_ria_listing';\n                currency = '$';\n                if (!name) name = type === 'auto_ria_search' ? 'AUTO.RIA — пошук' : 'AUTO.RIA — оголошення';\n            } else if (!name) {\n                name = host + ': ' + (path.split('/').filter(Boolean).pop() || '').replace(/\\.html?$/i, '').replace(/[-_]+/g, ' ').slice(0, 60);\n            }\n            const id = host.replace(/\\W+/g, '_') + '_' + hash(url);\n            items.push({ id: id, name: name, url: url, type: type, currency: currency });\n            changed = true;\n            say('✅ Додано: <b>' + esc(name) + '</b>\\nТип: ' + type + '\\nПерша ціна збережеться при найближчій перевірці (або команда /check).');\n            break;\n        }\n\n        case '/list': {\n            if (!items.length) {\n                say('Список порожній. Додай товар: <code>/add &lt;посилання&gt;</code>');\n                break;\n            }\n            const lines = items.map((it, i) => {\n                const p = prices[it.id];\n                const priceTxt = p && p.last_price != null ? fmt(p.last_price) + ' ' + (p.currency || it.currency || '') : 'ще не перевірено';\n                return (i + 1) + '. <b>' + esc(it.name) + '</b> — ' + priceTxt + '\\n    id: <code>' + esc(it.id) + '</code>';\n            });\n            say('📋 Відстежується (' + items.length + '):\\n\\n' + lines.join('\\n'));\n            break;\n        }\n\n        case '/remove':\n        case '/del': {\n            const arg = parts[1];\n            if (!arg) { say('Використання: <code>/remove &lt;номер або id&gt;</code>'); break; }\n            const idx = /^\\d+$/.test(arg) ? parseInt(arg, 10) - 1 : items.findIndex(i => i.id === arg);\n            if (idx < 0 || idx >= items.length) { say('❌ Не знайшов такої позиції. Дивись /list'); break; }\n            const removed = items.splice(idx, 1)[0];\n            delete prices[removed.id];\n            changed = true;\n            say('🗑 Видалено: <b>' + esc(removed.name) + '</b>');\n            break;\n        }\n\n        case '/check':\n            if (!items.length) {\n                say('Список порожній. Додай товар: <code>/add &lt;посилання&gt;</code>');\n            } else {\n                say('⏳ Перевіряю ціни (' + items.length + ' поз.)…');\n                runCheck = true;\n            }\n            break;\n\n        default:\n            if (cmd.startsWith('/')) say('Невідома команда. Напиши /help');\n    }\n}\n\nglobal.set('tg_offset', offset, STORE);\nif (changed) {\n    global.set('items', items, STORE);\n    global.set('prices', prices, STORE);\n}\nreturn [replies.length ? replies : null, runCheck ? { manual: true } : null];\n",
+    "outputs": 2,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 790,
+    "y": 460,
+    "wires": [
+      [
+        "pm_fn_send"
+      ],
+      [
+        "pm_fn_load"
+      ]
+    ]
+  },
+  {
+    "id": "pm_inj_init",
+    "type": "inject",
+    "z": "pm_tab",
+    "name": "При запуску",
+    "props": [
+      {
+        "p": "payload"
+      }
+    ],
+    "repeat": "",
+    "crontab": "",
+    "once": true,
+    "onceDelay": 0.5,
+    "topic": "",
+    "payload": "",
+    "payloadType": "date",
+    "x": 130,
+    "y": 600,
+    "wires": [
+      [
+        "pm_fn_init"
+      ]
+    ]
+  },
+  {
+    "id": "pm_fn_init",
+    "type": "function",
+    "z": "pm_tab",
+    "name": "Стартовий список",
+    "func": "// Ініціалізація: при першому запуску записуємо стартовий список товарів у файлове сховище.\nconst STORE = 'file';\nconst DEFAULT_ITEMS = [\n    {\n        id: 'comfy_galaxy_a17',\n        name: 'Samsung Galaxy A17 8/256Gb Gray (Comfy)',\n        url: 'https://comfy.ua/ua/smartfon-samsung-galaxy-a17-8-256gb-gray-sm-a175fzaeeuc.html',\n        type: 'comfy_product',\n        currency: '₴'\n    },\n    {\n        id: 'auto_ria_bolt_ev_search',\n        name: 'Chevrolet Bolt EV — пошук на AUTO.RIA',\n        url: 'https://auto.ria.com/uk/search/?abroad=0&customs_cleared=1&all%5B0%5D.any%5B0%5D.brand=13&all%5B0%5D.any%5B0%5D.any%5B0%5D.model=51091&query=chevrolet+bolt+ev',\n        type: 'auto_ria_search',\n        currency: '$'\n    }\n];\n\nif (global.get('items', STORE) === undefined) {\n    global.set('items', DEFAULT_ITEMS, STORE);\n    node.status({ fill: 'green', shape: 'dot', text: 'стартовий список записано' });\n} else {\n    const n = (global.get('items', STORE) || []).length;\n    node.status({ fill: 'grey', shape: 'dot', text: 'позицій у списку: ' + n });\n}\nreturn null;\n",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 340,
+    "y": 600,
+    "wires": [
+      []
+    ]
+  }
+]
